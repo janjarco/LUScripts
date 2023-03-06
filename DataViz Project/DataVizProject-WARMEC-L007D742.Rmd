@@ -1,0 +1,352 @@
+---
+title: "Project: My running"
+author: "Jan Jarco"
+date: '2022-11-06'
+output:
+  pdf_document:
+    number_sections: yes
+  html_document:
+    df_print: paged
+  word_document: default
+papersize: a4
+geometry: margin= 2 cm
+colorlinks: yes
+subtitle: 'DABN19: Data Visualization'
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include = FALSE}
+# Setup options for R Markdown
+knitr::opts_chunk$set(
+  echo       = FALSE,    # Do not print code
+  warning    = FALSE,    # Suppress warnings
+  message    = FALSE,    # Suppress messages
+  fig.align  = "center", # Center figures
+  fig.width  = 6,      # Good standard figure width for single-panel figures
+  fig.height = 4      # Good standard figure height for single-panel figures
+)
+
+library(tidyverse)
+
+# Set a theme for ggplot2
+theme_set(theme_light(base_size = 10))
+
+# Set options
+options(
+  digits = 3, # limit the number of significant digits
+  width  = 63 # limit the width of code output
+)
+
+library(openxlsx)
+library(scales)
+# rundata_raw <- read.xlsx("Activities Garmin 2022.xlsx", detectDates = T, )
+# rundata_raw %>% str
+
+library(readr)
+Activities_Garmin_2022_raw <- read_csv("Activities Garmin 2022 raw.csv",
+    col_types = cols(Favorite = col_skip(),
+        `Aerobic TE` = col_double(), `Avg Run Cadence...11` = col_double(),
+        `Max Run Cadence...12` = col_double(),
+        `Avg Pace` = col_character(), `Total Ascent` = col_double(),
+        `Total Descent` = col_double(), `Avg GCT Balance` = col_skip(),
+        `Training Stress Score®` = col_skip())) %>%
+  select(-c(`Avg Vertical Ratio`:Decompression)) %>% mutate_at(vars(contains("Elevation")), as.numeric)
+
+Activities_Garmin_2022_raw %>% str
+library(lubridate)
+
+rundata <- Activities_Garmin_2022_raw %>% 
+  mutate(Location = 
+           case_when(
+             grepl("Lund", Title) ~ "Lund, Sweden",
+             grepl("Izabelin", Title) ~ "Izabelin, Poland",
+             grepl("Warsza", Title) ~ "Warsaw, Poland",
+             grepl("Rzewnie", Title) ~ "Rzewnie, Poland",
+             TRUE ~ "Other"
+           )
+         , `Avg Pace` = as.POSIXct(format(paste("00", `Avg Pace`,sep =":"), format = "%H:%M:%S"), format = "%H:%M:%S")
+  ) %>%   mutate(Week = date(Date) - wday(Date, week_start = 1) +1) %>% filter(Date < as.Date("2022-09-30"))
+
+rundata$`Avg Pace` %>% is
+library(scales)
+```
+# Introduction
+
+In the middle of 2021 I started a new hobby, which is running. I was preparing for a Warsaw half-marathon and I already finished that challenge in September 2021. Then, I realized that I can achieve something more, naturally the next goal was a marathon. As a new year resolution I made a choice to register for Gdansk marathon on 10th of April. Three months of very intensive trainings resulted in time of 3:13:28 which is very good as for a debiut. Then I got an non-related to sports injury so I had to quit running for a pretty long time. In this report I wanted to visualize my running habits, its intensity during these 10 months and show my routes on the map including the marathon race. The data used in this report was gathered using Garmin sport watch (apart from several runs in January, because i purchased a watch in late January) during my running trainings and races in 2022. Garmin services also give you the possibility to see a lot of plots about your running and i wanted to recreate some of them on my own.  
+
+# Visualizations
+
+```{r fig.cap = "Weekly intenisty of the training, weekly distnce in blue bars and average speed of the trainings in orange line", include = T}
+
+weekly_run_data <- rundata %>% group_by(Week) %>% summarise(Distance = sum(Distance), Time = sum(as.numeric(Time))/60 ) %>% 
+  left_join(data.frame(Week = seq.Date(from =as.Date("2021-12-27"), to = as.Date("2022-09-26"), by = "7 days")) %>% 
+  mutate(Week_no = format(Week, "%U")), ., by = "Week")
+
+# ggplot(weekly_run_data) +
+#   geom_bar( aes(x = Week, y = Distance), stat = "identity", fill ="#5cc3f2") +
+#   geom_line(aes(x = Week, y = Time / 3), stat = "identity", color = "#f79b4a", size = 1.2) +
+#   # geom_text(aes(label=Distance, x=Week_no, y=Distance), colour="black")+
+#   # geom_text(aes(label=Time, x=Week_no, y=Distance *5), colour="black") +
+#   scale_x_date(date_labels = "%U", date_breaks = "1 week") +
+#   scale_y_continuous("Total weekly distance, kilometers", sec.axis = sec_axis(~.*3, name = "Total time of training, minutes")) +
+#   xlab("Week number") +
+#   # ylab("Total weekly distance") +
+#   theme(axis.text.x = element_text(angle = 90),
+#         panel.grid.major = element_blank(),
+#     panel.grid.minor = element_blank(),
+#     # panel.border = element_blank(),
+#     panel.background = element_blank())
+#   # scale_x_discrete(position = "bottom", limits  = unique(weekly_run_data$Week_no))+
+#   # scale_y_continuous("Precipitation", sec.axis = sec_axis(~ (. - a)/b, name = "Temperature")) +
+
+ggplot(weekly_run_data %>% mutate(Avg_pace = Distance / Time * 60)) +
+  geom_bar( aes(x = Week, y = Distance), stat = "identity", fill ="#5cc3f2") +
+  geom_line(aes(x = Week, y = Avg_pace / .5), stat = "identity", color = "#f79b4a", size = 1.2) +
+  scale_x_date(date_labels = "%U", date_breaks = "2 week") +
+  scale_y_continuous("Total weekly distance, kilometers", sec.axis = sec_axis(~.*.5, name = "Average spped of the trainings, km/h")) +
+  xlab("Week number") +
+  # ylab("Total weekly distance") +
+  theme(axis.text.x = element_text(angle = 90),
+        panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    # panel.border = element_blank(),
+    panel.background = element_blank())
+  # scale_x_discrete(position = "bottom", limits  = unique(weekly_run_data$Week_no))+
+  # scale_y_continuous("Precipitation", sec.axis = sec_axis(~ (. - a)/b, name = "Temperature")) +
+
+```
+
+On the chart above we can easily see my weekly training intensity in terms of total ran distance and duration of training. Before the marathon race I was training 3 or more times a week and the intensity was increasing every week. Then I applied tapering technique which means shortening the distance before important race, but in my opinion I have shorten the distance too much before the race. Then I got injury, so I could not do any running but Later I started some training 1-2 per week and I am pretty surprised that this intensity was that low. Also we can very strongly see that my average pace was progressing during the preparations to the marathon and it varies so much when there is 1-2 trainings a week.
+
+```{r  fig.cap = "Heatmap of running trainings in Lund", echo = FALSE}
+# rm(list = ls())
+knitr::opts_chunk$set(
+  echo       = FALSE,    # Do not print code
+  warning    = FALSE,    # Suppress warnings
+  message    = FALSE,    # Suppress messages
+  fig.align  = "center", # Center figures
+  fig.width  = 6,      # Good standard figure width for single-panel figures
+  fig.height = 5      # Good standard figure height for single-panel figures
+)
+library(tidyverse)
+library(here)
+library(XML)
+library(lubridate)
+library(ggmap)
+library(geosphere)
+options(digits.secs = 3)
+options(scipen = 999)
+
+# parse GPX file
+
+lund_gpx_file_names <- list.files("Running_gpx")
+lund_gpx_dfs <- sapply(lund_gpx_file_names, function(file_name){
+      path_tmp <- paste0("Running_gpx/", file_name)
+      parsed <- htmlTreeParse(file = path_tmp, useInternalNodes = TRUE)
+
+      # get values via via the respective xpath
+      coords <- xpathSApply(parsed, path = "//trkpt", xmlAttrs)
+      elev   <- xpathSApply(parsed, path = "//trkpt/ele", xmlValue)
+      ts_chr <- xpathSApply(parsed, path = "//trkpt/time", xmlValue)
+
+      # combine into df
+      dat_df <- data.frame(
+        ts_POSIXct = ymd_hms(ts_chr, tz = "EST"),
+        lat = as.numeric(coords["lat",]),
+        lon = as.numeric(coords["lon",]),
+        elev = as.numeric(elev)
+      )
+      # head(dat_df)
+
+      dat_df <-
+        dat_df %>%
+        mutate(lat_lead = lead(lat)) %>%
+        mutate(lon_lead = lead(lon)) %>%
+        rowwise() %>%
+        mutate(dist_to_lead_m = distm(c(lon, lat), c(lon_lead, lat_lead), fun = distHaversine)[1,1]) %>%
+        ungroup()
+
+      # compute time elapsed (in seconds) between subsequent GPS points
+      dat_df <-
+        dat_df %>%
+        mutate(ts_POSIXct_lead = lead(ts_POSIXct)) %>%
+        mutate(ts_diff_s = as.numeric(difftime(ts_POSIXct_lead, ts_POSIXct, units = "secs")))
+
+      # compute metres per seconds, kilometres per hour
+      dat_df <-
+        dat_df %>%
+        mutate(speed_m_per_sec = dist_to_lead_m / ts_diff_s) %>%
+        mutate(speed_km_per_h = speed_m_per_sec * 3.6)
+
+      # remove some columns we won't use anymore
+      dat_df <-
+        dat_df %>%
+        select(-c(lat_lead, lon_lead, ts_POSIXct_lead, ts_diff_s)) %>%
+        mutate(runid = file_name)
+      # head(dat_df) %>% as.data.frame()
+      return(dat_df) }, simplify = F, USE.NAMES = T)
+
+register_google(key = "")
+
+lund_gpx <- lund_gpx_dfs %>% do.call("rbind", .) %>% filter(runid != "Lund Running (3).gpx")
+      
+lund_lon_range <- lund_gpx %>% .$lon %>% range
+lund_lat_range <- lund_gpx %>% .$lat %>% range
+
+
+# get the map background 
+bbox <- make_bbox(lund_lon_range,lund_lat_range)
+dat_df_map <- get_googlemap(center = c(mean(lund_lon_range), mean(lund_lat_range)), zoom = 13, maptype = "satellite" )
+# no Google token alternative: 
+# dat_df_map <- get_map(bbox, maptype = "toner-lite", source = "stamen")
+
+# generate plot
+
+ggmap(dat_df_map) + 
+  # geom_point(data = dat_df, aes(lon, lat), size = 1, alpha = 0.5) +
+  geom_path(data = lund_gpx, aes(lon, lat, group = runid), alpha = .3, color = "#5cc3f2", size = 1.5) +
+  # geom_label(data = dat_df_dist_marks, aes(lon, lat, label = dist_m_cumsum_km_floor),size = 3) +
+  # labs(x = "Longitude", y = "Latitude", # color = "Elev. [m]", title = "Jan's runs in Lund in 2022") +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank()
+  )
+
+```
+
+I wanted to recreate the "heatmap" of my running in Lund. I put all the routes of 17 trainings in Lund onto the satellite map with some transparency to discover which areas are chosen the most by me. From the map above we can see that most often I choose the southern side of Lund. One of my favourite area of the training is Kallby with artificial lakes and it is very nice to go around these lakes and continue then along the river.
+\newpage
+```{r  fig.cap = "Marathon route with speed in km/h and markers every 5th km", echo = F}
+# Gdansk marathon ---------------------------------------------------------
+
+marathon_gpx_dfs <- sapply(c("Gdansk_marathon.gpx"), function(file_name){
+  path_tmp <- paste0("", file_name)
+  parsed <- htmlTreeParse(file = path_tmp, useInternalNodes = TRUE)
+  
+  # get values via via the respective xpath
+  coords <- xpathSApply(parsed, path = "//trkpt", xmlAttrs)
+  elev   <- xpathSApply(parsed, path = "//trkpt/ele", xmlValue)
+  ts_chr <- xpathSApply(parsed, path = "//trkpt/time", xmlValue)
+  
+  # combine into df 
+  dat_df <- data.frame(
+    ts_POSIXct = ymd_hms(ts_chr, tz = "EST"),
+    lat = as.numeric(coords["lat",]), 
+    lon = as.numeric(coords["lon",]), 
+    elev = as.numeric(elev)
+  )
+  # head(dat_df)
+  
+  dat_df <- 
+    dat_df %>%
+    mutate(lat_lead = lead(lat)) %>%
+    mutate(lon_lead = lead(lon)) %>%
+    rowwise() %>%
+    mutate(dist_to_lead_m = distm(c(lon, lat), c(lon_lead, lat_lead), fun = distHaversine)[1,1]) %>%
+    ungroup()
+  
+  # compute time elapsed (in seconds) between subsequent GPS points
+  dat_df <- 
+    dat_df %>%
+    mutate(ts_POSIXct_lead = lead(ts_POSIXct)) %>%
+    mutate(ts_diff_s = as.numeric(difftime(ts_POSIXct_lead, ts_POSIXct, units = "secs"))) 
+  
+  # compute metres per seconds, kilometres per hour 
+  dat_df <- 
+    dat_df %>%
+    mutate(speed_m_per_sec = dist_to_lead_m / ts_diff_s) %>%
+    mutate(speed_km_per_h = speed_m_per_sec * 3.6)
+  
+  # remove some columns we won't use anymore 
+  dat_df <-     dat_df %>% 
+    select(-c(lat_lead, lon_lead, ts_POSIXct_lead, ts_diff_s)) %>% 
+    mutate(runid = file_name)
+  
+  dat_df_dist_marks <- dat_df %>% 
+  mutate(dist_m_cumsum = cumsum(dist_to_lead_m)) %>%
+  mutate(dist_m_cumsum_km_floor = floor(dist_m_cumsum / 000)) %>%
+  group_by(dist_m_cumsum_km_floor) %>%
+  filter(row_number() == 1, dist_m_cumsum_km_floor > 0) 
+
+  # head(dat_df) %>% as.data.frame()
+  return(dat_df) }, simplify = F, USE.NAMES = T)
+
+
+
+marathon_gpx <- marathon_gpx_dfs %>% do.call("rbind", .) %>% 
+  mutate(speed_km_per_h = zoo::rollmean(speed_km_per_h, k = 250, fill = NA)) %>% 
+  filter(speed_km_per_h < 18 & speed_km_per_h > 10)
+
+dat_df_dist_marks <-   marathon_gpx %>% 
+  mutate(dist_m_cumsum = cumsum(dist_to_lead_m)) %>%
+  mutate(dist_m_cumsum_km_floor = 5 * floor(dist_m_cumsum / 5000)) %>%
+  group_by(dist_m_cumsum_km_floor) %>%
+  filter(row_number() == 1, dist_m_cumsum_km_floor > 0) 
+
+
+marathon_lon_range <- marathon_gpx %>% .$lon %>% range
+marathon_lat_range <- marathon_gpx %>% .$lat %>% range
+
+
+# get the map background 
+bbox <- make_bbox(marathon_lon_range,marathon_lat_range)
+dat_df_map <- get_googlemap(center = c(mean(marathon_lon_range), mean(marathon_lat_range)), zoom = 12, maptype = "satellite" )
+# no Google token alternative: 
+# dat_df_map <- get_map(bbox, maptype = "toner-lite", source = "stamen")
+
+# generate plot
+library(wesanderson)
+pal <- wes_palette("Zissou1", 100, type = "continuous")
+library(zoo)
+ggmap(dat_df_map) + 
+  # geom_point(data = dat_df, aes(lon, lat), size = 1, alpha = 0.5) +
+  geom_path(data = marathon_gpx, aes(lon, lat, color = speed_km_per_h),  size = 2.5) +
+  geom_label(data = dat_df_dist_marks, aes(lon, lat, label = dist_m_cumsum_km_floor),size = 3) +
+  # labs(x = "Longitude", y = "Latitude", # color = "Elev. [m]", title = "Jan's runs in marathon in 2022") +
+  scale_color_gradientn(colours = pal) +
+  labs(color = "Speed (km/h)") +
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank()
+  ) 
+
+
+```
+
+As I mentioned earlier I ran a marathon on 10th of April in Gdańsk, Poland. Above you can see the route of the race with my average speed heatmap. The thing that is emphasized about 10th kilometer there was a huge downhill which resulted in the best pace during the marathon. Also it is very visible that slowed down from 30th kilometer but I was maintaining pretty good speed. The finish was very exhausting but it was near the beach so I felt seaside climate in the meantime.
+\newpage
+
+```{r fig.cap= "Relation between average heart rate and average pace of the run",  include = TRUE}
+knitr::opts_chunk$set(
+  echo       = FALSE,    # Do not print code
+  warning    = FALSE,    # Suppress warnings
+  message    = FALSE,    # Suppress messages
+  fig.align  = "center", # Center figures
+  fig.width  = 7,      # Good standard figure width for single-panel figures
+  fig.height = 5      # Good standard figure height for single-panel figures
+)
+
+ggplot(rundata %>% arrange(`Avg Pace`) %>% as.data.frame() %>% head(nrow(.) -2) %>% 
+ filter(`Avg HR` > 0), aes(`Avg Pace`, `Avg HR`, col = Location )) +
+  geom_point() +
+  scale_x_datetime(breaks =  date_breaks("30 sec"), date_labels = "%M:%S" ) +
+  xlab("Average pace (minutes per kilometer)") +
+  ylab("Average heart rate") +
+  theme(axis.text.x = element_text(angle = 90))
+
+
+```
+I was very curious how strong is the relation between heart rate and a pace of training. With the plot above we can see that it is pretty strong. There are multiple factors that influence the heart rate and the most important one is training intensity that can be measured with average pace. However changes in elevation and type of training (interval or not) influence the heart rate strongly and this is why it is not perfectly linear relation. We cannot tell if there is any relation with the place of run, probably because all these places are plain so there is no special effort due to changes of altitude.
+
+# Conclusion
+
+To conclude my efforts the most important plots showing my running were reproduced in this project. It demanded pretty a lot of data processing to gather all the information in one place. Additionally I wanted to see how the heart rate behaves depending on my average pace and this relation is very strong according to the scatter plot. These presented visualization may help observe my running habits and prepare me better for future challenges for example marathon under 3 hours.
+
